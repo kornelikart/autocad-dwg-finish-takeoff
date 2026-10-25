@@ -19,12 +19,16 @@ _KIND_MARKERS: tuple[tuple[str, TableKind], ...] = (
     ("экспликация помещений", "room_explication"),
     ("экспликация полов", "floor_explication"),
     ("спецификация заполнения проем", "openings_spec"),
+    ("ведомость проем", "openings_spec"),
 )
-# Продолжение таблицы: та же координата Y с точностью до этой величины (ед. чертежа).
-_CONTINUATION_Y_TOLERANCE = 1.0
-# «Высота - ширина» в дециметрах, например «21 - 10» или «21,5 - 8».
-_OPENING_SIZE = re.compile(r"(\d{2}(?:[.,]\d)?)\s*-\s*(\d{1,2}(?:[.,]\d)?)")
-_DECIMETERS_PER_METER = 10
+# Продолжение таблицы: та же координата (Y — правее, X — ниже) с точностью до этой величины (ед. чертежа).
+_CONTINUATION_TOLERANCE = 1.0
+# «Высота - ширина»: в дециметрах («21,5 - 10», ГОСТ 475) или в миллиметрах («2150 - 900»).
+_OPENING_SIZE = re.compile(r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)(?![\d.,])")
+_SIZE_CELLS = range(1, 12)
+_MM_FROM = 100  # число от 100 — миллиметры, меньше — дециметры
+_HEIGHT_RANGE_M = (1.0, 4.5)  # ниже метра — скорее масса или количество, чем проём
+_WIDTH_RANGE_M = (0.3, 8.0)
 
 
 @dataclass
@@ -79,13 +83,14 @@ def read_tables(doc) -> list[RawTable]:
 
 
 def classify_tables(raw: list[RawTable]) -> list[ClassifiedTable]:
-    """Вид и заголовок каждой таблицы; безымянная таблица с теми же колонками на той же
-    высоте правее известной — её продолжение и наследует вид и заголовок."""
+    """Вид и заголовок каждой таблицы. Безымянная таблица — продолжение известной и
+    наследует её вид и заголовок, если стоит правее на той же высоте с теми же колонками
+    или ниже в той же колонке листа с почти теми же колонками (±1)."""
     first_pass = [_classify(table) for table in raw]
     result: list[ClassifiedTable] = []
     for table, own in zip(raw, first_pass):
         if own.kind == "other":
-            parent = _left_neighbour(table, first_pass)
+            parent = _left_neighbour(table, first_pass) or _upper_neighbour(table, first_pass)
             if parent is not None:
                 own = ClassifiedTable(parent.kind, parent.title, table.rows, table.insert)
         result.append(own)
@@ -129,18 +134,33 @@ def parse_floor_explication(t: ClassifiedTable) -> list[FloorTypeRow]:
 
 
 def parse_openings_spec(t: ClassifiedTable) -> dict[str, tuple[float, float]]:
-    """Марка проёма → (ширина, высота) в метрах."""
+    """Марка проёма → (ширина, высота) в метрах. Строка без правдоподобного размера
+    (номер ГОСТ, «см. эскиз», шапка) пропускается."""
     spec: dict[str, tuple[float, float]] = {}
     for row in t.rows:
         mark = normalize_room_number(_cell(row, 0))
-        size = _OPENING_SIZE.search(" ".join(_cell(row, i) for i in range(2, 12)))
-        if not mark or size is None:
-            continue
-        height_dm, width_dm = parse_ru_float(size.group(1)), parse_ru_float(size.group(2))
-        if height_dm is None or width_dm is None:
-            continue
-        spec[mark] = (width_dm / _DECIMETERS_PER_METER, height_dm / _DECIMETERS_PER_METER)
+        size = _opening_size(" ".join(_cell(row, i) for i in _SIZE_CELLS))
+        if mark and size is not None:
+            spec[mark] = size
     return spec
+
+
+def _opening_size(text: str) -> tuple[float, float] | None:
+    """Первая пара «высота - ширина» с правдоподобными размерами, как (ширина, высота) в метрах."""
+    for match in _OPENING_SIZE.finditer(text):
+        height, width = _to_metres(match.group(1)), _to_metres(match.group(2))
+        if (height is not None and width is not None
+                and _HEIGHT_RANGE_M[0] <= height <= _HEIGHT_RANGE_M[1]
+                and _WIDTH_RANGE_M[0] <= width <= _WIDTH_RANGE_M[1]):
+            return width, height
+    return None
+
+
+def _to_metres(value: str) -> float | None:
+    number = parse_ru_float(value)
+    if number is None:
+        return None
+    return round(number / 1000 if number >= _MM_FROM else number / 10, 3)
 
 
 def _clean(text: str) -> str:
@@ -152,7 +172,7 @@ def _cell(row: list[str], index: int) -> str:
 
 
 def _classify(table: RawTable) -> ClassifiedTable:
-    head = " ".join(cell for row in table.rows[:2] for cell in row).lower()
+    head = " ".join(cell for row in table.rows[:2] for cell in row).lower().replace("ё", "е")
     kind: TableKind = "other"
     for marker, marker_kind in _KIND_MARKERS:
         if marker in head:
@@ -174,9 +194,25 @@ def _left_neighbour(table: RawTable,
     for other in classified:
         if (other.kind != "other"
                 and other.insert[0] < table.insert[0]
-                and abs(other.insert[1] - table.insert[1]) <= _CONTINUATION_Y_TOLERANCE
+                and abs(other.insert[1] - table.insert[1]) <= _CONTINUATION_TOLERANCE
                 and _column_count(other.rows) == columns
                 and (best is None or other.insert[0] > best.insert[0])):
+            best = other
+    return best
+
+
+def _upper_neighbour(table: RawTable,
+                     classified: list[ClassifiedTable]) -> ClassifiedTable | None:
+    """Ближайшая сверху опознанная таблица в той же колонке листа (та же координата X),
+    число колонок отличается не больше чем на одну."""
+    columns = _column_count(table.rows)
+    best: ClassifiedTable | None = None
+    for other in classified:
+        if (other.kind != "other"
+                and other.insert[1] > table.insert[1]
+                and abs(other.insert[0] - table.insert[0]) <= _CONTINUATION_TOLERANCE
+                and abs(_column_count(other.rows) - columns) <= 1
+                and (best is None or other.insert[1] < best.insert[1])):
             best = other
     return best
 

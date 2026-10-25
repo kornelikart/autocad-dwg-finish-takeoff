@@ -65,3 +65,18 @@ def test_mark_matches_case_insensitively_and_keeps_original_text(synth_doc):
     door = next(o for o in ops if o.mark == "дс-3Л")
     assert (door.width_m, door.height_m, door.size_source) == (1.0, 2.15, "spec")
     assert sorted(i.code for i in issues) == ["opening_mark_not_in_spec", "opening_without_mark"]
+
+
+def test_lookup_size_variant_marks():
+    spec = {"3": (1.0, 2.15), "5": (1.2, 2.15)}
+    assert lookup_size("3**", spec) == (1.0, 2.15)
+    assert lookup_size("5'", spec) == (1.2, 2.15)
+    assert lookup_size("3*", spec) == (1.0, 2.15)
+    assert lookup_size("7*", spec) is None
+
+
+def test_floor_level_opening_has_no_sill(synth_doc):
+    rooms, _ = extract_rooms(synth_doc, SYNTH_PROFILE)
+    ops, _ = extract_openings(synth_doc, SYNTH_PROFILE, rooms, {**SPEC, "3": (0.9, 2.15)})
+    opening = next(o for o in ops if o.mark == "3")
+    assert (opening.width_m, opening.height_m, opening.sill_m, opening.size_source) == (0.9, 2.15, 0.0, "spec")
