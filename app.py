@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 import yaml
 from dotenv import load_dotenv
+from PIL import Image
 
 from finishcalc.convert import ConvertError
 from finishcalc.export import export_excel
@@ -41,6 +42,7 @@ PLAN_MARKER = "план"  # файл с этим словом в имени (б�
 DEFAULT_HEIGHT_M = 3.0
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 NO_VALUE = "— нет —"
+MAX_PLAN_HEIGHT_PX = 700  # высокий план иначе растянулся бы на несколько экранов
 STEP_UPLOAD, STEP_PROFILE, STEP_RESULT = "upload", "profile", "result"
 
 # Поле профиля, подпись, вид списка значений, поле необязательное.
@@ -260,6 +262,12 @@ def png_bytes(rooms: list[Room], issues: list[Issue]) -> bytes:
         return render_plan(rooms, issues, Path(tmp) / "plan.png").read_bytes()
 
 
+def show_plan(image: bytes, caption: str) -> None:
+    """Картинка плана не выше `MAX_PLAN_HEIGHT_PX` и не шире страницы."""
+    width, height = Image.open(BytesIO(image)).size
+    st.image(image, caption=caption, width=min(width, round(MAX_PLAN_HEIGHT_PX * width / height)))
+
+
 def plan_preview(project: dict, profile: Profile) -> dict:
     """Помещения и картинка каждого плана при этом профиле; пересчитывается, только если профиль другой."""
     cached = st.session_state.get("preview")
@@ -309,7 +317,7 @@ def step_profile(project: dict | None) -> Profile | None:
     else:
         st.caption(f"Найдено помещений: {found}. Зелёные — без замечаний, оранжевые — с замечаниями.")
     for name, image in zip(project["plan_names"], preview["images"]):
-        st.image(image, caption=name)
+        show_plan(image, name)
     return profile
 
 
@@ -436,7 +444,8 @@ def show_result(bundle: dict) -> None:
                    "по их названиям. Проверьте её.")
     st.download_button("Скачать Excel", bundle["xlsx"], file_name="finishcalc.xlsx", mime=XLSX_MIME,
                        type="primary", key="download")
-    sheets = pd.read_excel(BytesIO(bundle["xlsx"]), sheet_name=None)  # на экране то же, что на листах Excel
+    # На экране то же, что на листах Excel; пустые ячейки остаются пустыми, а не «None».
+    sheets = pd.read_excel(BytesIO(bundle["xlsx"]), sheet_name=None, keep_default_na=False)
     st.subheader("По помещениям")
     st.dataframe(sheets["По помещениям"], hide_index=True)
     st.caption("Откосы проёмов не учтены.")
@@ -445,7 +454,7 @@ def show_result(bundle: dict) -> None:
     st.subheader(f"Предупреждения: {len(result.issues)}")
     st.dataframe(sheets["Проверки"][["Помещение", "Сообщение", "Код"]], hide_index=True)
     for name, image in bundle["plans"]:
-        st.image(image, caption=f"{name}: зелёные помещения без замечаний, оранжевые — с замечаниями")
+        show_plan(image, f"{name}: зелёные помещения без замечаний, оранжевые — с замечаниями")
 
 
 def step_result(project: dict | None, profile: Profile | None, params) -> None:

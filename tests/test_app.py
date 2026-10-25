@@ -133,6 +133,14 @@ def test_calculation_in_mode_b_reaches_results(monkeypatch, tmp_path):
     assert llm.calls == len(bundle["result"].rooms)
 
 
+def test_empty_result_cells_are_blank_not_none(monkeypatch, tmp_path):
+    at = open_demo(monkeypatch, tmp_path, FakeLLM({"suggest_finish": SUGGESTED}))
+    at.button(key="calculate").click().run()
+    rooms, _, issues = result_tables(at)
+    assert set(rooms.value["Наименование"]) == {""}  # у синтетических помещений нет экспликации
+    assert "" in set(issues.value["Помещение"])  # предупреждения по контурам без номера
+
+
 def test_result_is_hidden_after_parameters_change(monkeypatch, tmp_path):
     at = open_demo(monkeypatch, tmp_path, FakeLLM({"suggest_finish": SUGGESTED}))
     at.button(key="calculate").click().run()
