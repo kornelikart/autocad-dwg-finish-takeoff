@@ -46,15 +46,6 @@ def test_app_shows_four_steps():
 
 # --- помощники приложения ---
 
-def test_demo_files_are_split_into_plans_and_general_data(tmp_path):
-    names = ["ПЛАНЫ этажей.dwg", "общий_план.DXF", "ОД_спецификации.dwg", "чертёж.dxf", "заметки.txt"]
-    for name in names:
-        (tmp_path / name).write_bytes(b"")
-    plans, data = app.split_demo_files(tmp_path)
-    assert {p.name for p in plans} == {"ПЛАНЫ этажей.dwg", "общий_план.DXF"}
-    assert {p.name for p in data} == {"ОД_спецификации.dwg", "чертёж.dxf"}
-
-
 def test_uploads_are_saved_under_their_base_name(tmp_path):
     uploaded = SimpleNamespace(name="../../evil.dxf", getvalue=lambda: b"data")
     [path] = app.save_uploads([uploaded], tmp_path / "upload")

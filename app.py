@@ -28,7 +28,7 @@ from finishcalc.extract.tables import parse_room_explication
 from finishcalc.llm import LLMError, make_llm
 from finishcalc.model import Issue, Profile, Room
 from finishcalc.norms import Norm, Unit, load_norms, save_norms
-from finishcalc.pipeline import ProjectResult, analyze, load_drawings, load_tables
+from finishcalc.pipeline import ProjectResult, analyze, load_drawings, load_tables, split_project_files
 from finishcalc.profile import (
     ProfileError, detect_profile, load_profile, refine_profile, save_profile, summarize_drawing)
 from finishcalc.render import render_plan
@@ -37,8 +37,6 @@ CACHE_DIR = Path(".cache")
 PROFILE_PATH = CACHE_DIR / "profile.json"
 NORMS_PATH = CACHE_DIR / "norms.yaml"
 DEMO_DIR_ENV = "FINISHCALC_DEMO_DIR"
-DRAWING_SUFFIXES = {".dwg", ".dxf"}
-PLAN_MARKER = "план"  # файл с этим словом в имени (без учёта регистра) — план, остальные — общие данные
 DEFAULT_HEIGHT_M = 3.0
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 NO_VALUE = "— нет —"
@@ -115,13 +113,6 @@ def demo_dir() -> Path | None:
     return None
 
 
-def split_demo_files(folder: Path) -> tuple[list[Path], list[Path]]:
-    """DWG и DXF папки: планы (в имени есть «ПЛАН») и общие данные."""
-    files = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in DRAWING_SUFFIXES)
-    plans = [p for p in files if PLAN_MARKER in p.name.casefold()]
-    return plans, [p for p in files if p not in plans]
-
-
 def save_uploads(files, folder: Path) -> list[Path]:
     folder.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -176,7 +167,7 @@ def step_upload() -> dict | None:
     folder = demo_dir()
     if folder is not None:
         if st.button("Открыть демо-проект", key="demo"):
-            plans, data = split_demo_files(folder)
+            plans, data = split_project_files(folder)
             if not plans:
                 st.warning(f"В демо-папке {folder} нет планов: ищу DWG или DXF с «ПЛАН» в имени.")
             else:

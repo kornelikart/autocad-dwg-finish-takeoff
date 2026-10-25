@@ -28,6 +28,9 @@ from finishcalc.norms import Norm
 Mode = Literal["A", "B"]
 _Row = TypeVar("_Row")
 
+DRAWING_SUFFIXES = {".dwg", ".dxf"}
+PLAN_MARKER = "план"  # файл с этим словом в имени (без учёта регистра) — план, остальные — общие данные
+
 
 @dataclass
 class ProjectResult:
@@ -42,6 +45,13 @@ class ProjectResult:
     materials: list[MaterialLine]
     issues: list[Issue]
     mode: Mode
+
+
+def split_project_files(folder: Path) -> tuple[list[Path], list[Path]]:
+    """DWG и DXF папки: планы (в имени есть «ПЛАН») и общие данные."""
+    files = sorted(p for p in Path(folder).iterdir() if p.is_file() and p.suffix.lower() in DRAWING_SUFFIXES)
+    plans = [p for p in files if PLAN_MARKER in p.name.casefold()]
+    return plans, [p for p in files if p not in plans]
 
 
 def load_drawings(paths: list[Path], work_dir: Path) -> list[Drawing]:

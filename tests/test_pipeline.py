@@ -233,6 +233,15 @@ def test_no_plans_gives_empty_result(tables_a, fake_llm):
     assert r.mode == "A"
 
 
+def test_project_files_are_split_into_plans_and_general_data(tmp_path):
+    names = ["ПЛАНЫ этажей.dwg", "общий_план.DXF", "ОД_спецификации.dwg", "чертёж.dxf", "заметки.txt"]
+    for name in names:
+        (tmp_path / name).write_bytes(b"")
+    plans, data = pipeline.split_project_files(tmp_path)
+    assert {p.name for p in plans} == {"ПЛАНЫ этажей.dwg", "общий_план.DXF"}
+    assert {p.name for p in data} == {"ОД_спецификации.dwg", "чертёж.dxf"}
+
+
 def test_load_drawings_reads_dxf(tmp_path):
     path = make_synthetic_plan(tmp_path / "plan.dxf")
     docs = load_drawings([path, path], tmp_path / "work")
