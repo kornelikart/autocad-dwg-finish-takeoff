@@ -132,6 +132,30 @@ def test_empty_result_cells_are_blank_not_none(monkeypatch, tmp_path):
     assert "" in set(issues.value["Помещение"])  # предупреждения по контурам без номера
 
 
+def test_question_about_result_is_answered(monkeypatch, tmp_path):
+    llm = FakeLLM({"suggest_finish": SUGGESTED, "chat": {"answer": "Керамогранит: 64,1 м²"}})
+    at = open_demo(monkeypatch, tmp_path, llm)
+    at.button(key="calculate").click().run()
+    at.chat_input(key="chat_question").set_value("Сколько керамогранита?").run()
+    assert not at.exception
+    assert [m.markdown[0].value for m in at.chat_message] == ["Сколько керамогранита?", "Керамогранит: 64,1 м²"]
+
+
+def test_chat_llm_error_is_shown_not_raised(monkeypatch, tmp_path):
+    def reply(system, user, schema, name):
+        if name == "chat":
+            raise LLMError("Mistral HTTP 429: Rate limit exceeded")
+        return SUGGESTED
+
+    at = open_demo(monkeypatch, tmp_path, FakeLLM(reply))
+    at.button(key="calculate").click().run()
+    at.chat_input(key="chat_question").set_value("Сколько керамогранита?").run()
+    assert not at.exception
+    assert any("429" in e.value for e in at.error)
+    assert len(at.chat_message) == 0
+    assert result_tables(at)  # результат на экране остаётся
+
+
 def test_result_is_hidden_after_parameters_change(monkeypatch, tmp_path):
     at = open_demo(monkeypatch, tmp_path, FakeLLM({"suggest_finish": SUGGESTED}))
     at.button(key="calculate").click().run()

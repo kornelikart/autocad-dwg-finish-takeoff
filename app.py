@@ -1,4 +1,4 @@
-"""Интерфейс Streamlit: 1. Загрузка, 2. Профиль, 3. Параметры, 4. Результат.
+"""Интерфейс Streamlit: 1. Загрузка, 2. Профиль, 3. Параметры, 4. Результат (с чатом по результату).
 
 Тяжёлые действия (чтение чертежей, вызов ИИ, расчёт) выполняются по кнопкам, а их итог лежит
 в `st.session_state`: перезапуск скрипта при каждом клике ничего из этого не повторяет.
@@ -21,6 +21,7 @@ import yaml
 from dotenv import load_dotenv
 from PIL import Image
 
+from finishcalc.chat import answer
 from finishcalc.convert import ConvertError
 from finishcalc.export import export_excel
 from finishcalc.extract.rooms import extract_rooms
@@ -448,6 +449,26 @@ def show_result(bundle: dict) -> None:
         show_plan(image, f"{name}: зелёные помещения без замечаний, оранжевые — с замечаниями")
 
 
+def result_chat(bundle: dict, norms: dict[str, Norm]) -> None:
+    """Вопросы по результату. История лежит в `bundle["chat"]`, новый расчёт начинает её заново;
+    ошибка ИИ показывается сразу и не мешает задать вопрос ещё раз."""
+    st.subheader("Вопрос по результату")
+    st.caption("ИИ отвечает только по таблицам расчёта и сам ничего не считает.")
+    history = bundle.setdefault("chat", [])
+    question = st.chat_input("Например: сколько керамогранита на 2-м этаже?", key="chat_question")
+    if question:
+        try:
+            with st.spinner("Спрашиваю ИИ…"):
+                history.append((question, answer(question, bundle["result"], make_llm(os.environ, CACHE_DIR), norms)))
+        except LLMError as error:
+            st.error(error_message(error))
+    for asked, reply in history:
+        with st.chat_message("user"):
+            st.write(asked)
+        with st.chat_message("assistant"):
+            st.write(reply)
+
+
 def step_result(project: dict | None, profile: Profile | None, params) -> None:
     st.header("4. Результат")
     if project is None or profile is None or params is None:
@@ -467,6 +488,7 @@ def step_result(project: dict | None, profile: Profile | None, params) -> None:
         st.warning("Профиль, высоты или нормы изменились после расчёта: нажмите «Посчитать» ещё раз.")
     else:
         show_result(bundle)
+        result_chat(bundle, norms)
 
 
 def main() -> None:
