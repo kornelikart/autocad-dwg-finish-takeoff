@@ -6,6 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "finishcalc"
 version = "0.1.0"
 description = "Расчёт объёмов отделочных материалов по чертежам AutoCAD"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = [
     "ezdxf>=1.4",

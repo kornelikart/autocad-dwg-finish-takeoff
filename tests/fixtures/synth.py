@@ -5,7 +5,7 @@ from pathlib import Path
 
 import ezdxf
 from ezdxf.document import Drawing
-from ezdxf.layouts import BlockLayout, Modelspace
+from ezdxf.layouts import Modelspace
 
 from finishcalc.model import Profile
 

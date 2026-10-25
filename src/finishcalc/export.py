@@ -7,7 +7,6 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.worksheet import Worksheet
 
 from finishcalc.calc import ZoneArea, format_ru, round_half_up, unit_digits
 from finishcalc.model import FloorLayer, FloorType, MaterialLine, Opening, Room
