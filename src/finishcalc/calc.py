@@ -100,16 +100,22 @@ def _fallback_name(source_text: str) -> str:
     return source_text.strip()[:_NAME_LIMIT].strip() or _NO_NORM_NAME
 
 
-def _norm_quantity(norm: Norm, area: float, amount: float) -> float:
-    """Количество по норме: м², м³ — `amount` с запасом; кг, л — расход на `area`."""
+def _norm_applies(norm: Norm | None, volume: bool) -> bool:
+    """Норма годится, только если её единица согласована с переданным количеством:
+    объём (слой `volume`) — только м³-норма; площадь — любая, кроме м³, и для кг, л нужен расход."""
+    if norm is None:
+        return False
+    if volume:
+        return norm.unit == "м³"
+    return norm.unit == "м²" or (norm.unit != "м³" and norm.per_m2 is not None)
+
+
+def _norm_quantity(norm: Norm, amount: float) -> float:
+    """Количество по норме: м², м³ — `amount` с запасом; кг, л — расход на `amount` м²."""
     reserve = 1 + norm.reserve_pct / 100
     if norm.unit in _DIRECT_UNITS:
         return amount * reserve
-    return area * norm.per_m2 * norm.coats * reserve
-
-
-def _has_norm(norm: Norm | None) -> bool:
-    return norm is not None and (norm.unit in _DIRECT_UNITS or norm.per_m2 is not None)
+    return amount * norm.per_m2 * norm.coats * reserve
 
 
 def _add(totals: dict[tuple[str, str], MaterialLine], room_number: str, material: str, unit: str,
@@ -126,14 +132,14 @@ def _add(totals: dict[tuple[str, str], MaterialLine], room_number: str, material
 
 
 def _add_item(totals: dict[tuple[str, str], MaterialLine], room_number: str, key: str,
-              norms: dict[str, Norm], area: float, amount: float, source_text: str, fallback_unit: str) -> None:
-    """Позиция `key` на поверхности `area` м² (для слоя-объёма `amount` — м³).
-    Нет нормы — количество с чертежа, название — исходный текст поверхности."""
+              norms: dict[str, Norm], amount: float, source_text: str, volume: bool = False) -> None:
+    """Позиция `key` на поверхности площадью `amount` м² (или слой объёмом `amount` м³, если `volume`).
+    Нет подходящей нормы — количество с чертежа в м² (м³ для слоя), название — исходный текст."""
     norm = norms.get(key) if key != OTHER else None
-    if not _has_norm(norm):
-        _add(totals, room_number, _fallback_name(source_text), fallback_unit, amount, 0.0, "чертёж")
+    if not _norm_applies(norm, volume):
+        _add(totals, room_number, _fallback_name(source_text), "м³" if volume else "м²", amount, 0.0, "чертёж")
         return
-    _add(totals, room_number, norm.title, norm.unit, _norm_quantity(norm, area, amount), norm.reserve_pct, "норма")
+    _add(totals, room_number, norm.title, norm.unit, _norm_quantity(norm, amount), norm.reserve_pct, "норма")
 
 
 def _thickness_mm(layer: FloorLayer) -> float | None:
@@ -173,11 +179,10 @@ def aggregate_materials(rooms: list[Room], areas: dict[str, RoomAreas], floor_ty
 
         if finish is not None:
             for key in _unique(finish.ceiling_items):
-                _add_item(totals, number, key, norms, area.ceiling_m2, area.ceiling_m2,
-                          finish.source.get("ceiling", ""), "м²")
+                _add_item(totals, number, key, norms, area.ceiling_m2, finish.source.get("ceiling", ""))
             for zone in area.zones:
                 for key in _unique(zone.items):
-                    _add_item(totals, number, key, norms, zone.area_m2, zone.area_m2, zone.source_text, "м²")
+                    _add_item(totals, number, key, norms, zone.area_m2, zone.source_text)
             bands = [z for z in area.zones if z.unspecified and z.area_m2 > 0]
             if bands:
                 issues.append(_unspecified_issue(number, bands))
@@ -189,7 +194,7 @@ def aggregate_materials(rooms: list[Room], areas: dict[str, RoomAreas], floor_ty
                     continue
                 if layer.count_as == "area":
                     layer_area = area.floor_m2 + (area.upturn_m2 if index == 0 else 0.0)
-                    _add_item(totals, number, layer.norm_key, norms, layer_area, layer_area, layer.material, "м²")
+                    _add_item(totals, number, layer.norm_key, norms, layer_area, layer.material)
                     continue
                 thickness = _thickness_mm(layer)
                 if thickness is None:
@@ -198,11 +203,11 @@ def aggregate_materials(rooms: list[Room], areas: dict[str, RoomAreas], floor_ty
                         f"Слой «{layer.material}» типа пола {floor_type.code}: толщина не указана, слой не учтён"))
                     continue
                 volume = area.floor_m2 * thickness / _MM_PER_M
-                _add_item(totals, number, layer.norm_key, norms, area.floor_m2, volume, layer.material, "м³")
+                _add_item(totals, number, layer.norm_key, norms, volume, layer.material, volume=True)
         elif finish is not None:
             floor_area = area.floor_m2 + area.upturn_m2
             for key in _unique(finish.floor_items):
-                _add_item(totals, number, key, norms, floor_area, floor_area, finish.source.get("floor", ""), "м²")
+                _add_item(totals, number, key, norms, floor_area, finish.source.get("floor", ""))
 
     lines = list(totals.values())
     for line in lines:

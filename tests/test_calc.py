@@ -218,3 +218,45 @@ def test_floor_type_areas_sums_rooms_and_skips_untyped():
     rooms = [a, b, c, d]
     areas = {r.number: room_areas(r, 3.0) for r in rooms}
     assert floor_type_areas(rooms, areas) == {"7": 29.0, "9": 4.0}
+
+
+# --- единица нормы согласована с переданным количеством ---
+
+def plain_finish(ceiling=None, wall_items=None, floor=None, source=None):
+    return FinishSpec(ceiling or [], None, [Zone(0.0, None, wall_items or [], "стены")], floor or [], 0.0, source or {})
+
+
+def materials(room, floor_types=None):
+    lines, _ = aggregate_materials([room], {"Т1": room_areas(room, 3.0)}, floor_types or {}, NORMS)
+    return [(l.material, l.unit, l.quantity, l.basis, l.reserve_pct) for l in lines]
+
+
+def test_volume_norm_in_floor_items_is_not_labelled_with_floor_area():
+    # «стяжка» в описании пола без слоёв: 20 м² пола нельзя выдавать за 20 м³
+    room = make_room(plain_finish(floor=["screed"], source={"floor": "стяжка"}), floor_type=None)
+    assert materials(room) == [("стяжка", "м²", 20.0, "чертёж", 0.0)]
+
+
+def test_volume_norm_on_area_layer_is_not_labelled_with_floor_area():
+    room = make_room(plain_finish())
+    ft = {"7": FloorType("7", "", [FloorLayer("Стяжка цементная", 50, 50, "area", "screed")], "")}
+    assert materials(room, ft) == [("Стяжка цементная", "м²", 20.0, "чертёж", 0.0)]
+
+
+def test_volume_layer_with_area_norm_keeps_volume_unit():
+    room = make_room(plain_finish())
+    ft = {"7": FloorType("7", "", [FloorLayer("Ламинат 8 мм", 40, 40, "volume", "laminate")], "")}
+    assert materials(room, ft) == [("Ламинат 8 мм", "м³", 0.8, "чертёж", 0.0)]
+
+
+def test_volume_layer_with_per_area_norm_keeps_volume_unit():
+    room = make_room(plain_finish())
+    ft = {"7": FloorType("7", "", [FloorLayer("Грунтовочный слой", 10, 10, "volume", "primer")], "")}
+    assert materials(room, ft) == [("Грунтовочный слой", "м³", 0.2, "чертёж", 0.0)]
+
+
+def test_volume_norm_in_ceiling_and_walls_falls_back_to_source_text():
+    f = plain_finish(ceiling=["screed"], wall_items=["screed"], source={"ceiling": "потолок из стяжки"})
+    room = make_room(f, floor_type=None)
+    assert materials(room) == [("потолок из стяжки", "м²", 20.0, "чертёж", 0.0),
+                               ("стены", "м²", 49.9, "чертёж", 0.0)]
