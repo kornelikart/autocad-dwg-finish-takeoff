@@ -128,17 +128,24 @@ class OllamaLLM:
 
 
 class FallbackLLM:
-    """Основной клиент; при `LLMError` — запасной."""
+    """Основной клиент; при `LLMError` — запасной.
+
+    `last_used_fallback` — ответ последнего вызова дал запасной клиент (кэш такие ответы не хранит).
+    """
 
     def __init__(self, primary: LLM, fallback: LLM):
         self.primary = primary
         self.fallback = fallback
+        self.last_used_fallback = False
 
     def complete_json(self, system: str, user: str, schema: dict, name: str) -> dict:
         try:
-            return self.primary.complete_json(system, user, schema, name)
+            answer = self.primary.complete_json(system, user, schema, name)
         except LLMError:
+            self.last_used_fallback = True
             return self.fallback.complete_json(system, user, schema, name)
+        self.last_used_fallback = False
+        return answer
 
 
 class CachedLLM:
@@ -169,10 +176,15 @@ class CachedLLM:
 
     def complete_json(self, system: str, user: str, schema: dict, name: str) -> dict:
         key = self._key(system, user, schema, name)
-        if key not in self._store:
-            self._store[key] = self.inner.complete_json(system, user, schema, name)
+        if key in self._store:
+            return copy.deepcopy(self._store[key])
+        answer = self.inner.complete_json(system, user, schema, name)
+        # Ответ запасной модели не кэшируем: иначе он закрепился бы под id основной.
+        if not getattr(self.inner, "last_used_fallback", False):
+            self._store[key] = answer
             self._save()
-        return copy.deepcopy(self._store[key])
+            return copy.deepcopy(answer)
+        return answer
 
 
 def make_llm(env: Mapping[str, str], cache_dir: Path) -> CachedLLM:

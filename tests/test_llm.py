@@ -1,3 +1,5 @@
+import json
+
 import pytest, requests
 from finishcalc import llm as L
 from tests.fakes import FakeLLM
@@ -64,3 +66,20 @@ def test_make_llm_without_key_uses_ollama(tmp_path):
 def test_fallback_used_on_llmerror():
     def fail(*a): raise L.LLMError("429")
     assert L.FallbackLLM(FakeLLM(fail), FakeLLM({"t": {"ok": 1}})).complete_json("s", "u", {}, "t") == {"ok": 1}
+
+def test_fallback_answer_not_cached(tmp_path):
+    def fail(*a): raise L.LLMError("429")
+    fallback = FakeLLM({"t": {"ok": 1}})
+    path = tmp_path / "llm.json"
+    cached = L.CachedLLM(L.FallbackLLM(FakeLLM(fail), fallback), path, model_id="m")
+    assert cached.complete_json("s", "u", {}, "t") == {"ok": 1}
+    assert not path.exists() or json.loads(path.read_text(encoding="utf-8")) == {}
+    assert cached.complete_json("s", "u", {}, "t") == {"ok": 1}
+    assert fallback.calls == 2
+
+def test_primary_answer_cached_through_fallback_wrapper(tmp_path):
+    primary, fallback = FakeLLM({"t": {"ok": 1}}), FakeLLM({"t": {"ok": 2}})
+    cached = L.CachedLLM(L.FallbackLLM(primary, fallback), tmp_path / "llm.json", model_id="m")
+    assert cached.complete_json("s", "u", {}, "t") == {"ok": 1}
+    assert cached.complete_json("s", "u", {}, "t") == {"ok": 1}
+    assert primary.calls == 1 and fallback.calls == 0
