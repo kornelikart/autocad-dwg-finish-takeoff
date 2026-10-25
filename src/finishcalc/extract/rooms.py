@@ -16,8 +16,11 @@ _FLATTEN_TOLERANCE_MM = 1.0
 def extract_rooms(doc: Drawing, profile: Profile) -> tuple[list[Room], list[Issue]]:
     """Помещения чертежа и предупреждения о контурах и номерах без пары.
 
-    Контур — полилиния в слое помещений; номер и тип пола относятся к
-    наименьшему контуру, который их содержит. Геометрия в метрах.
+    Контур — полилиния в слое помещений. Номер относится к наибольшему из содержащих
+    его контуров, в котором нет других номеров: так безымянный контур внутри помещения
+    (колонна, шахта, зона) не подменяет само помещение. Если такого нет — к наименьшему
+    содержащему. Тип пола — к наименьшему содержащему его контуру с номером, иначе к
+    наименьшему содержащему. Геометрия в метрах.
     """
     scale = profile.mm_per_unit / 1000
     contours = _read_contours(doc, profile, scale)
@@ -27,24 +30,34 @@ def extract_rooms(doc: Drawing, profile: Profile) -> tuple[list[Room], list[Issu
     floor_types_in: list[list[str]] = [[] for _ in contours]
     issues: list[Issue] = []
 
+    room_tags = []
     for raw, point in _read_tags(doc, profile.room_tag_block, profile.room_tag_attr, scale):
         number = normalize_room_number(raw)
-        if not number:
-            continue
-        index = _smallest_covering(contours, smallest_first, point)
-        if index is None:
+        if number:
+            room_tags.append((number, _covering(contours, smallest_first, point)))
+    numbers_covered: list[set[str]] = [set() for _ in contours]
+    for number, covering in room_tags:
+        for index in covering:
+            numbers_covered[index].add(number)
+
+    for number, covering in room_tags:
+        if not covering:
             issues.append(Issue(
                 "number_without_contour", number,
                 f"Номер {number} не попадает ни в один контур помещения",
             ))
-        elif number not in numbers_in[index]:
+            continue
+        only_this = [i for i in covering if numbers_covered[i] == {number}]
+        index = only_this[-1] if only_this else covering[0]
+        if number not in numbers_in[index]:
             numbers_in[index].append(number)
 
     for raw, point in _read_tags(doc, profile.floor_tag_block, profile.floor_tag_attr, scale):
         floor_type = raw.strip()
-        index = _smallest_covering(contours, smallest_first, point)
-        if floor_type and index is not None:
-            floor_types_in[index].append(floor_type)
+        covering = _covering(contours, smallest_first, point)
+        if floor_type and covering:
+            numbered = [i for i in covering if numbers_in[i]]
+            floor_types_in[(numbered or covering)[0]].append(floor_type)
 
     rooms: list[Room] = []
     for index, contour in enumerate(contours):
@@ -137,8 +150,7 @@ def _read_tags(doc: Drawing, block_name: str, attr_tag: str,
     return tags
 
 
-def _smallest_covering(contours: list[Polygon], smallest_first: list[int],
-                       point: Point) -> int | None:
-    """Индекс наименьшего по площади контура, содержащего точку.
-    smallest_first — индексы контуров по возрастанию площади."""
-    return next((i for i in smallest_first if contours[i].covers(point)), None)
+def _covering(contours: list[Polygon], smallest_first: list[int], point: Point) -> list[int]:
+    """Индексы контуров, содержащих точку, по возрастанию площади.
+    smallest_first — индексы всех контуров по возрастанию площади."""
+    return [i for i in smallest_first if contours[i].covers(point)]
