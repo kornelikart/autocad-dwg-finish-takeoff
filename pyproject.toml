@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finishcalc"
+version = "0.1.0"
+description = "Расчёт объёмов отделочных материалов по чертежам AutoCAD"
+requires-python = ">=3.10"
+dependencies = [
+    "ezdxf>=1.4",
+    "shapely>=2.0",
+    "openpyxl>=3.1",
+    "pandas>=2.0",
+    "matplotlib>=3.8",
+    "streamlit>=1.40",
+    "requests>=2.31",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+finishcalc = ["norms.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
