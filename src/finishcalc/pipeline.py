@@ -18,7 +18,7 @@ from finishcalc.convert import ConvertError, dwg_to_dxf
 from finishcalc.extract.openings import extract_openings
 from finishcalc.extract.rooms import extract_rooms
 from finishcalc.extract.tables import (
-    ClassifiedTable, FinishRow, FloorTypeRow, TableKind, classify_tables, parse_finish_schedule,
+    ClassifiedTable, ExplRow, FinishRow, FloorTypeRow, TableKind, classify_tables, parse_finish_schedule,
     parse_floor_explication, parse_openings_spec, parse_room_explication, read_tables)
 from finishcalc.finishes import OTHER, parse_finish, parse_floor_type, suggest_finish
 from finishcalc.llm import LLM
@@ -30,6 +30,8 @@ _Row = TypeVar("_Row")
 
 DRAWING_SUFFIXES = {".dwg", ".dxf"}
 PLAN_MARKER = "план"  # файл с этим словом в имени (без учёта регистра) — план, остальные — общие данные
+# Площадь контура расходится с экспликацией больше чем на эту долю — контур в чертеже, скорее всего, неверный.
+CONTOUR_AREA_TOLERANCE = 0.05
 
 
 @dataclass
@@ -94,6 +96,7 @@ def analyze(plan_docs: list[Drawing], tables: list[ClassifiedTable], profile: Pr
         row = explication.get(room.number)
         if row is not None:
             room.name, room.floor = row.name, row.floor
+    issues.extend(_contour_area_issues(rooms, explication))
 
     _attach_openings(plan_docs, rooms_by_doc, profile, _openings_spec(tables), issues)
 
@@ -123,6 +126,24 @@ def analyze(plan_docs: list[Drawing], tables: list[ClassifiedTable], profile: Pr
         issues=issues,
         mode=mode,
     )
+
+
+def _contour_area_issues(rooms: list[Room], explication: dict[str, ExplRow]) -> list[Issue]:
+    """Помещения, у которых площадь контура отличается от экспликации больше допуска.
+    Площадь не подменяется: расчёт идёт по контуру, а предупреждение показывает, где его проверить."""
+    issues = []
+    for room in rooms:
+        row = explication.get(room.number)
+        if row is None or not row.area_m2:
+            continue
+        share = abs(room.area_m2 - row.area_m2) / row.area_m2
+        if share > CONTOUR_AREA_TOLERANCE:
+            issues.append(Issue(
+                "contour_area_mismatch", room.number,
+                f"Площадь контура {calc.format_ru(room.area_m2)} м² отличается от экспликации "
+                f"{calc.format_ru(row.area_m2)} м² на {calc.format_ru(share * 100)}% — проверьте контур помещения в чертеже",
+            ))
+    return issues
 
 
 def _rows(tables: list[ClassifiedTable], kind: TableKind,

@@ -287,3 +287,13 @@ def test_load_tables_classifies_each_drawing_on_its_own(monkeypatch):
     monkeypatch.setattr(pipeline, "read_tables", lambda doc: raw[doc])
     tables = load_tables(docs)
     assert [t.kind for t in tables] == ["room_explication", "other", "floor_explication"]
+
+
+def test_contour_area_mismatch_flags_rooms_off_by_more_than_5_percent(synth_doc, fake_llm):
+    expl = [["А02", "Кабинет", "22,0", ""] if row[0] == "А02" else row for row in EXPL]  # 20 против 22: 9 %
+    expl = [["A01", "Холл", "21,0", ""] if row[0] == "A01" else row for row in expl]     # 20 против 21: 4,8 %
+    r = analyze([synth_doc], [ct("room_explication", expl)], SYNTH_PROFILE, fake_llm, NORMS, {})
+    flagged = [i for i in r.issues if i.code == "contour_area_mismatch"]
+    assert [i.room for i in flagged] == ["А02"]
+    assert "20,0" in flagged[0].message and "22,0" in flagged[0].message and "9,1%" in flagged[0].message
+    assert r.areas["А02"].floor_m2 == pytest.approx(20.0)  # площадь из экспликации не подставляется
