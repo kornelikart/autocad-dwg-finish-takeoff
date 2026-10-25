@@ -1,0 +1,63 @@
+# Справочник норм расхода отделочных материалов (значения предварительные).
+# per_m2 — расход на 1 м² за один слой (null — количество берётся прямо с чертежа),
+# coats — число слоёв, reserve_pct — запас на подрезку и потери, %.
+plaster_gypsum:
+  title: Штукатурка гипсовая (слой 10 мм)
+  unit: кг
+  per_m2: 8.5
+  coats: 1
+  reserve_pct: 0
+putty:
+  title: Шпаклёвка
+  unit: кг
+  per_m2: 1.0
+  coats: 1
+  reserve_pct: 0
+primer:
+  title: Грунтовка
+  unit: л
+  per_m2: 0.15
+  coats: 1
+  reserve_pct: 0
+paint_wd:
+  title: Краска водно-дисперсионная
+  unit: л
+  per_m2: 0.15
+  coats: 2
+  reserve_pct: 0
+porcelain_tile:
+  title: Керамогранит
+  unit: м²
+  per_m2: null
+  coats: 1
+  reserve_pct: 10
+tile_adhesive:
+  title: Клей плиточный
+  unit: кг
+  per_m2: 5.0
+  coats: 1
+  reserve_pct: 0
+suspended_ceiling:
+  title: Подвесной потолок
+  unit: м²
+  per_m2: null
+  coats: 1
+  reserve_pct: 5
+laminate:
+  title: Ламинат
+  unit: м²
+  per_m2: null
+  coats: 1
+  reserve_pct: 5
+roll_waterproofing:
+  title: Рулонная гидроизоляция
+  unit: м²
+  per_m2: null
+  coats: 1
+  reserve_pct: 15
+screed:
+  title: Стяжка
+  unit: м³
+  per_m2: null
+  coats: 1
+  reserve_pct: 0
