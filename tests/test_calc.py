@@ -1,7 +1,8 @@
 import pytest
 from shapely.geometry import box
 from finishcalc.model import Room, Opening, FinishSpec, Zone, FloorType, FloorLayer
-from finishcalc.calc import room_areas, aggregate_materials, floor_type_areas, overlap
+from finishcalc.calc import (room_areas, aggregate_materials, floor_type_areas, overlap, round_half_up,
+                             unit_digits, format_ru)
 from finishcalc.finishes import UNSPECIFIED
 from finishcalc.norms import load_norms
 
@@ -260,3 +261,23 @@ def test_volume_norm_in_ceiling_and_walls_falls_back_to_source_text():
     room = make_room(f, floor_type=None)
     assert materials(room) == [("потолок из стяжки", "м²", 20.0, "чертёж", 0.0),
                                ("стены", "м²", 49.9, "чертёж", 0.0)]
+
+
+# --- общие правила округления и записи чисел (их же использует выгрузка в Excel) ---
+
+def test_round_half_up():
+    assert round_half_up(20.25, 1) == 20.3  # round() дал бы 20.2
+    assert round_half_up(247.15, 1) == 247.2  # шум плавающей запятой не мешает
+    assert round_half_up(1.005, 2) == 1.01
+    assert round_half_up(2.0, 1) == 2.0 and isinstance(round_half_up(2, 1), float)
+
+
+def test_unit_digits():
+    assert unit_digits("м³") == 2
+    assert [unit_digits(u) for u in ("м²", "м", "кг", "л", "%", "шт.")] == [1] * 6
+
+
+def test_format_ru():
+    assert format_ru(4.68) == "4,7"
+    assert format_ru(0.0) == "0,0"
+    assert format_ru(3.0, 2) == "3,00"

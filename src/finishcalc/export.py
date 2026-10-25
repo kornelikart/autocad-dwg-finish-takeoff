@@ -2,7 +2,6 @@
 по общим правилам (м² и прочее — до 0.1, м³ — до 0.01, «от половины вверх»)."""
 
 import re
-from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -10,14 +9,12 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from finishcalc.calc import ZoneArea
+from finishcalc.calc import ZoneArea, format_ru, round_half_up, unit_digits
 from finishcalc.model import FloorLayer, FloorType, MaterialLine, Opening, Room
 from finishcalc.pipeline import ProjectResult
 
 _MAX_COLUMN_WIDTH = 60
 _WIDTH_PADDING = 2
-_DEFAULT_DIGITS = 1
-_DIGITS = {"м³": 2}
 _UNSPECIFIED_MARK = " (не указано)"
 _NO_NORM_BASIS = "чертёж (норма не задана)"
 _UNKNOWN_FLOOR_TYPE = "тип не описан в экспликации полов"
@@ -69,9 +66,9 @@ def _finish_rows(result: ProjectResult) -> list[list]:
 
         rows.append([
             room.number, room.name or getattr(schedule, "name", ""),
-            text("ceiling"), _round(areas.ceiling_m2),
-            text("walls"), _round(areas.walls_m2),
-            text("floor"), _round(areas.floor_m2),
+            text("ceiling"), _rounded(areas.ceiling_m2),
+            text("walls"), _rounded(areas.walls_m2),
+            text("floor"), _rounded(areas.floor_m2),
             _zones_text(areas.zones), getattr(schedule, "note", ""),
         ])
     return rows
@@ -89,14 +86,14 @@ def _floor_rows(result: ProjectResult) -> list[list]:
     for code in codes:
         floor_type = result.floor_types.get(code)
         rooms_text = ", ".join(numbers.get(code, [])) or (floor_type.rooms_label if floor_type else "")
-        rows.append([code, rooms_text, _round(result.floor_type_areas.get(code, 0.0)), _composition(floor_type)])
+        rows.append([code, rooms_text, _rounded(result.floor_type_areas.get(code, 0.0)), _composition(floor_type)])
     return rows
 
 
 def _material_row(line: MaterialLine) -> list:
     basis = _NO_NORM_BASIS if line.basis == "чертёж" else line.basis
-    return [line.material, line.unit, _round(line.quantity, _DIGITS.get(line.unit, _DEFAULT_DIGITS)),
-            _round(line.reserve_pct), basis]
+    return [line.material, line.unit, _rounded(line.quantity, line.unit),
+            _rounded(line.reserve_pct, "%"), basis]
 
 
 def _room_rows(result: ProjectResult) -> list[list]:
@@ -106,8 +103,8 @@ def _room_rows(result: ProjectResult) -> list[list]:
         schedule = result.finish_rows.get(room.number)
         rows.append([
             room.number, room.name or getattr(schedule, "name", ""), room.floor or "", room.floor_type or "",
-            _round(areas.floor_m2), _round(room.perimeter_m), _round(areas.height_m),
-            _round(areas.walls_m2), _round(areas.ceiling_m2), _round(areas.upturn_m2),
+            _rounded(areas.floor_m2), _rounded(room.perimeter_m, "м"), _rounded(areas.height_m, "м"),
+            _rounded(areas.walls_m2), _rounded(areas.ceiling_m2), _rounded(areas.upturn_m2),
             "; ".join(_opening_text(o) for o in room.openings),
         ])
     return rows
@@ -135,13 +132,9 @@ def _write_sheet(workbook: Workbook, title: str, header: list[str], rows: list[l
 
 # --- текст и числа ---
 
-def _round(value: float, digits: int = _DEFAULT_DIGITS) -> float:
-    """Округление «от половины вверх»; `round(…, 9)` убирает шум плавающей запятой."""
-    return float(Decimal(repr(round(value, 9))).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP))
-
-
-def _comma(value: float) -> str:
-    return f"{value:.1f}".replace(".", ",")
+def _rounded(value: float, unit: str = "м²") -> float:
+    """Значение, округлённое по правилу единицы (то же, что в расчёте): м³ — 0.01, остальные — 0.1."""
+    return round_half_up(value, unit_digits(unit))
 
 
 def _num(value: float) -> str:
@@ -160,7 +153,7 @@ def _height(value: float) -> str:
 def _zones_text(zones: list[ZoneArea]) -> str:
     parts = []
     for zone in zones:
-        part = f"{_height(zone.from_m)}–{_height(zone.to_m)} м: {_comma(_round(zone.area_m2))} м²"
+        part = f"{_height(zone.from_m)}–{_height(zone.to_m)} м: {format_ru(_rounded(zone.area_m2))} м²"
         parts.append(part + _UNSPECIFIED_MARK if zone.unspecified else part)
     return "; ".join(parts)
 

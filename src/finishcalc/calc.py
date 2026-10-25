@@ -148,21 +148,27 @@ def _thickness_mm(layer: FloorLayer) -> float | None:
     return sum(known) / len(known) if known else None
 
 
-def _round(value: float, digits: int) -> float:
+def round_half_up(value: float, digits: int) -> float:
     """Округление «от половины вверх»; `round(…, 9)` убирает шум плавающей запятой
     (247.15 не превращается в 247.1)."""
     return float(Decimal(repr(round(value, 9))).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP))
 
 
-def _fmt(value: float) -> str:
-    return f"{value:.1f}".replace(".", ",")
+def unit_digits(unit: str) -> int:
+    """Знаков после запятой при округлении величины в единице `unit`: м³ — 2, остальные — 1."""
+    return _DIGITS.get(unit, _DEFAULT_DIGITS)
+
+
+def format_ru(value: float, digits: int = 1) -> str:
+    """Число с десятичной запятой и `digits` знаками после неё: 4.68 -> «4,7»."""
+    return f"{value:.{digits}f}".replace(".", ",")
 
 
 def _unspecified_issue(room_number: str, bands: list[ZoneArea]) -> Issue:
-    ranges = "; ".join(f"{_fmt(b.from_m)}–{_fmt(b.to_m)} м" for b in bands)
+    ranges = "; ".join(f"{format_ru(b.from_m)}–{format_ru(b.to_m)} м" for b in bands)
     total = sum(b.area_m2 for b in bands)
     return Issue("unspecified_wall_band", room_number,
-                 f"Полоса стены {ranges} не описана в ведомости отделки, площадь {_fmt(total)} м²")
+                 f"Полоса стены {ranges} не описана в ведомости отделки, площадь {format_ru(total)} м²")
 
 
 def aggregate_materials(rooms: list[Room], areas: dict[str, RoomAreas], floor_types: dict[str, FloorType],
@@ -211,7 +217,7 @@ def aggregate_materials(rooms: list[Room], areas: dict[str, RoomAreas], floor_ty
 
     lines = list(totals.values())
     for line in lines:
-        line.quantity = _round(line.quantity, _DIGITS.get(line.unit, _DEFAULT_DIGITS))
+        line.quantity = round_half_up(line.quantity, unit_digits(line.unit))
     return lines, issues
 
 
@@ -221,4 +227,4 @@ def floor_type_areas(rooms: list[Room], areas: dict[str, RoomAreas]) -> dict[str
     for room in rooms:
         if room.floor_type:
             totals[room.floor_type] = totals.get(room.floor_type, 0.0) + areas[room.number].floor_m2
-    return {code: _round(total, _DEFAULT_DIGITS) for code, total in totals.items()}
+    return {code: round_half_up(total, unit_digits("м²")) for code, total in totals.items()}
